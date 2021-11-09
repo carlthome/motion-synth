@@ -1,0 +1,19 @@
+body {
+    background: black;
+}
+canvas, video { 
+    position: fixed;
+    top: 0; 
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+}
+video {
+    object-fit: fill;
+    pointer-events: none;
+    filter: blur(25px);
+    -webkit-filter: blur(25px);
+    transform: scaleX(-1);
+    opacity: 0.25;
+    z-index: 1;
+}
