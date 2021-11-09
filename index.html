@@ -50,7 +50,7 @@ window.onresize = function() { scaleVisuals() };
 
 // Setup motion detection with a webcam to create and trigger sounds.
 navigator.mediaDevices.getUserMedia({video: true}).then(function(stream) {
-  video.src = window.URL.createObjectURL(stream);
+  video.srcObject = stream;
   video.onloadedmetadata = function(e) { 
     console.log(e);
     video.play();
@@ -99,7 +99,6 @@ navigator.mediaDevices.getUserMedia({video: true}).then(function(stream) {
   console.error(e);
   alert("Motion detection not working (" + e.name + "). This website requires a webcam.");
 });
-
 
 // Setup audio context.
 var ac = new AudioContext();
