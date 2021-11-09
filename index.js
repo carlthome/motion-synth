@@ -144,10 +144,6 @@ function createAudioContext() {
       const avg = (r + g + b + a) / 4;
       data[i] = 2 * avg / 255 - 1
     }
-
-    // Don't care about spatial data in image. Randomly reorder samples.
-    //TODO Find intuitive coupling between spatial ordering in an image and the audio instead of shuffling.
-    shuffle(data);
   };
 
   return { audioContext, bufferSource, masterBuss };
