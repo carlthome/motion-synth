@@ -1,7 +1,6 @@
-/* Create harmonic sounds by filtering white noise by resonances peaks
-corresponding to MIDI notes' corresponding fundamental frequencies, all
-connected to a master buss with a limiter, a gain control and a FFT analyser
-responsible for the visualizations.
+/* Play synth pad sounds by filtering webcam pixels through bandpass filters,
+with frequencies corresponding to 12-TET notes across the 2D canvas. (loudness
+up and down, pitch left and right).
 */
 "use strict";
 
@@ -47,7 +46,6 @@ function createWebcamCapture(bufferSource, notes, lowestNote, highestNote) {
   navigator.mediaDevices.getUserMedia({ video: true }).then(function (stream) {
     video.srcObject = stream;
     video.onloadedmetadata = function (e) {
-      console.log(e);
       video.play();
 
       // Motion detection parameters.
