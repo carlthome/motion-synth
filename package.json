@@ -1,0 +1,22 @@
+{
+  "name": "motion-synth",
+  "version": "1.0.0",
+  "description": "Generate harmonic audio from a motion detected video stream.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carlthome/motion-synth.git"
+  },
+  "author": "Carl Thomé",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/carlthome/motion-synth/issues"
+  },
+  "homepage": "https://github.com/carlthome/motion-synth#readme",
+  "devDependencies": {
+    "cypress": "^8.7.0"
+  }
+}

@@ -11,18 +11,39 @@ CanvasRenderingContext2D.prototype.fillCircle = function (x, y, r) {
   this.fill();
 }
 
-function onload() {
+// Populate audio buffer with image data.
+AudioBufferSourceNode.prototype.setImage = function (image) {
+  const samples = 320*240
+  const channels = 1
+  console.log(this)
+  const data = this.context.createBuffer(channels, samples, this.context.sampleRate);
+  for (var i = 0; i < data.length; ++i) {
+    const pixel = i * 4;
+    const r = image.data[pixel];
+    const g = image.data[pixel + 1];
+    const b = image.data[pixel + 2];
+    const a = image.data[pixel + 3];
+    const avg = (r + g + b + a) / 4;
+    data[i] = 2 * avg / 255 - 1;
+  }
+  this.buffer = data;
+};
+
+window.onload = () => {
   checkBrowserSupport();
   window.addEventListener("click", start);
   window.addEventListener("load", scaleVisuals);
   window.addEventListener("resize", scaleVisuals);
 }
+
 window.addEventListener("load", onload);
 
 function start() {
-  const { audioContext, bufferSource, masterBuss } = createAudioContext();
-  const { notes, lowestNote, highestNote } = createScale(audioContext, bufferSource, masterBuss);
-  createWebcamCapture(bufferSource, notes, lowestNote, highestNote);
+  const audioContext = new AudioContext();
+  const masterBuss = createMasterBuss(audioContext);
+  const bufferSource = createAudioSource(audioContext);
+  const notes = createScale(audioContext, bufferSource, masterBuss);
+  createWebcamCapture(bufferSource, notes);
 }
 
 // Require browser functionality.
@@ -42,7 +63,7 @@ function scaleVisuals() {
 }
 
 // Setup motion detection with a webcam to create and trigger sounds.
-function createWebcamCapture(bufferSource, notes, lowestNote, highestNote) {
+function createWebcamCapture(bufferSource, notes) {
   navigator.mediaDevices.getUserMedia({ video: true }).then(function (stream) {
     video.srcObject = stream;
     video.onloadedmetadata = function (e) {
@@ -51,12 +72,12 @@ function createWebcamCapture(bufferSource, notes, lowestNote, highestNote) {
       // Motion detection parameters.
       const threshold = 0.25; // Percentage of changed pixels required in a motion detect region for the region to trigger a motion event.
       const rows = 10; // Amplitudes
-      const columns = notes.length; // Pitches
+      const columns = notes.filters.length; // Pitches
 
       function onMotionDetected(e) {
         const noteId = e.x;
         const amplitude = 1 - (e.y / rows);
-        notes[noteId].play(amplitude);
+        notes.filters[noteId].play(amplitude);
       }
 
       // Create canvas to blit video frames to.
@@ -76,14 +97,14 @@ function createWebcamCapture(bufferSource, notes, lowestNote, highestNote) {
         frames.drawImage(video, 0, 0, video.width, video.height);
         const currentFrame = frames.getImageData(0, 0, video.width, video.height);
 
-        // Convert and playback video frame as audio.
+        // Playback video frame as audio.
         bufferSource.setImage(currentFrame);
 
         // Motion detect and trigger audio filters in callback.
         previousFrame = detectMotion(previousFrame, currentFrame, threshold, rows, columns, onMotionDetected);
 
         // Render graphics on top of video frame.
-        visualize(ctx, notes, lowestNote, highestNote);
+        visualize(ctx, notes);
 
         // Call continuously.
         requestAnimationFrame(loop);
@@ -92,7 +113,7 @@ function createWebcamCapture(bufferSource, notes, lowestNote, highestNote) {
     };
   }).catch(function (e) {
     console.error(e);
-    alert("Motion detection not working (" + e.name + "). This website requires a webcam.");
+    alert(`Motion detection not working (${e.name}). This website requires a webcam.`);
   });
 }
 
@@ -112,114 +133,50 @@ function createMasterBuss(audioContext) {
   filter.frequency.value = 1000;
   filter.gain.value = -24;
 
-  masterIn.connect(filter);
-  filter.connect(compressor);
-  compressor.connect(masterOut);
-  masterOut.connect(audioContext.destination);
+  //masterIn.connect(filter);
+  //filter.connect(compressor);
+  //compressor.connect(masterOut);
+  //masterOut.connect(audioContext.destination);
+  masterIn.connect(audioContext.destination);
 
   return masterIn;
 }
 
-// Setup audio context.
-function createAudioContext() {
-  const audioContext = new AudioContext();
-
-  const masterBuss = createMasterBuss(audioContext);
-
-  // Source audio is noise generated from the latest webcam frame.
+// Source audio is noise generated from the latest webcam frame.
+function createAudioSource(audioContext) {
+  const width = 320;
+  const height = 240;
+  const channels = 1;
+  const samples = width * height;
+  const buffer = audioContext.createBuffer(channels, samples, audioContext.sampleRate);
   const bufferSource = audioContext.createBufferSource();
-  bufferSource.buffer = audioContext.createBuffer(1, 307200 / 4, audioContext.sampleRate);
+  bufferSource.buffer = buffer;
   bufferSource.loop = true;
-  bufferSource.start(0);
-  AudioBufferSourceNode.prototype.setImage = function (image) {
-    const data = bufferSource.buffer.getChannelData(0);
-    for (var i = 0; i < data.length; ++i) {
-      const pixel = i * 4;
-      const r = image.data[pixel];
-      const g = image.data[pixel + 1];
-      const b = image.data[pixel + 2];
-      const a = image.data[pixel + 3];
-      const avg = (r + g + b + a) / 4;
-      data[i] = 2 * avg / 255 - 1
-    }
-  };
-
-  return { audioContext, bufferSource, masterBuss };
-}
-
-// Create white noise filter at given note's chosen harmonic.
-function createResonancePeak(frequency, harmonic, audioContext, bufferSource, masterBuss) {
-
-  // Determine attack and release time.
-  const baseAttack = 0.5;
-  const baseRelease = 1.0;
-  const attack = baseAttack * harmonic;
-  const release = baseRelease / harmonic;
-  const detuneCents = 25;
-  const panScale = 0.2;
-
-  // Filter out the desired frequency from the buffer source.
-  const filter = audioContext.createBiquadFilter();
-  filter.type = "bandpass";
-  filter.frequency.value = frequency;
-  filter.Q.value = 1000.0;
-
-  // Create pan control.
-  const panner = audioContext.createPanner();
-  panner.panningModel = "equalpower";
-
-  // Create volume control
-  const volume = audioContext.createGain();
-  volume.gain.value = 0.0;
-
-  // Connect components.
-  volume.connect(masterBuss);
-  panner.connect(volume);
-  filter.connect(panner);
-  bufferSource.connect(filter);
-
-  // Continously change position of resonance peak.
-  var x = random(-1, 1);
-  var y = 0;
-  var z = 0;
-  const update = function () {
-    x *= random(1 - panScale, 1 + panScale);
-    y *= random(1 - panScale, 1 + panScale);
-    z *= random(1 - panScale, 1 + panScale);
-    panner.setPosition(x, y, z);
-    filter.detune.value = random(-detuneCents, detuneCents);
-  }
-
-  return {
-    filter: filter,
-    panner: panner,
-    volume: volume,
-    attackTime: attack,
-    releaseTime: release,
-    update: update,
-  };
+  bufferSource.start();
+  return bufferSource;
 }
 
 // Setup notes like a piano, but with only a diatonic scale.
-function createScale(audioContext, bufferSource, masterBuss) {
+function createScale(audioContext, audioInput, audioOutput) {
   const lowestNote = 21;
   const highestNote = 107;
   const scale = [0, 2, 4, 5, 7, 9, 11];
 
-  const notes = [];
+  const filters = [];
   for (var i = 0; i < (scale.length / 12) * (highestNote - lowestNote); ++i) {
     const octave = Math.floor(i / scale.length);
     const midiNote = lowestNote + octave * 12 + scale[i % scale.length];
-    const note = new Note(midiNote, audioContext, bufferSource, masterBuss);
-    notes.push(note);
+    const note = new Note(midiNote, audioContext, audioInput, audioOutput);
+    filters.push(note);
   }
 
-  return { notes, lowestNote, highestNote };
+  const notes = { filters, lowestNote, highestNote };
+  return notes;
 }
 
-// A note consists of several resonance peaks filtering the buffer source at the corresponding note frequency.
+// A note consists of several resonance peaks filtering the buffer source at the corresponding harmonic series.
 class Note {
-  constructor(midiNote, audioContext, bufferSource, masterBuss) {
+  constructor(midiNote, audioContext, audioInput, audioOutput) {
     this.note = midiNote;
     this.resonances = [];
     this.audioContext = audioContext;
@@ -228,8 +185,8 @@ class Note {
     const peaks = 2;
     for (var harmonic = 1; harmonic <= peaks; ++harmonic) {
       const frequency = harmonic * mtof(midiNote);
-      const resonancePeak = createResonancePeak(frequency, harmonic, audioContext, bufferSource, masterBuss);
-      console.log(resonancePeak);
+      const resonancePeak = createResonancePeak(frequency, harmonic, audioContext, audioInput, audioOutput);
+      console.debug(resonancePeak);
       this.resonances.push(resonancePeak);
     }
 
@@ -262,8 +219,61 @@ class Note {
   }
 }
 
+// Create white noise filter at given note's chosen harmonic.
+function createResonancePeak(frequency, harmonic, audioContext, audioInput, audioOutput) {
+
+  // Determine attack and release time.
+  const baseAttack = 0.5;
+  const baseRelease = 1.0;
+  const attack = baseAttack * harmonic;
+  const release = baseRelease / harmonic;
+  const detuneCents = 25;
+  const panScale = 0.2;
+
+  // Filter out the desired frequency from the buffer source.
+  const filter = audioContext.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.value = frequency;
+  filter.Q.value = 1000.0;
+
+  // Create pan control.
+  const panner = audioContext.createPanner();
+  panner.panningModel = "equalpower";
+
+  // Create volume control
+  const volume = audioContext.createGain();
+  volume.gain.value = 0.0;
+
+  // Connect components.
+  volume.connect(audioOutput);
+  panner.connect(volume);
+  filter.connect(panner);
+  audioInput.connect(filter);
+
+  // Continously change position of resonance peak.
+  var x = random(-1, 1);
+  var y = 0;
+  var z = 0;
+  const tick = function () {
+    x *= random(1 - panScale, 1 + panScale);
+    y *= random(1 - panScale, 1 + panScale);
+    z *= random(1 - panScale, 1 + panScale);
+    panner.setPosition(x, y, z);
+    filter.detune.value = random(-detuneCents, detuneCents);
+  }
+
+  return {
+    filter: filter,
+    panner: panner,
+    volume: volume,
+    attackTime: attack,
+    releaseTime: release,
+    update: tick,
+  };
+}
+
 // Visualize sound on canvas.
-function visualize(ctx, notes, lowestNote, highestNote) {
+function visualize(ctx, notes) {
 
   // Clear background (with ghosting).
   ctx.globalCompositeOperation = 'source-over';
@@ -273,13 +283,13 @@ function visualize(ctx, notes, lowestNote, highestNote) {
 
   // Draw stars
   ctx.globalCompositeOperation = 'screen';
-  const w = ctx.canvas.width / notes.length;
+  const w = ctx.canvas.width / notes.filters.length;
   const h = ctx.canvas.height;
-  for (var i = 0; i < notes.length; ++i) {
-    for (var j = 0; j < notes[i].resonances.length; ++j) {
-      const v = notes[i].resonances[j].volume.gain.value;
-      const f = Math.max(0, Math.min(1, (notes[i].resonances[j].filter.frequency.value - mtof(lowestNote)) / mtof(highestNote - lowestNote)));
-      const n = (notes[i].note - lowestNote) / (highestNote - lowestNote);
+  for (var i = 0; i < notes.filters.length; ++i) {
+    for (var j = 0; j < notes.filters[i].resonances.length; ++j) {
+      const v = notes.filters[i].resonances[j].volume.gain.value;
+      const f = Math.max(0, Math.min(1, (notes.filters[i].resonances[j].filter.frequency.value - mtof(notes.lowestNote)) / mtof(notes.highestNote - notes.lowestNote)));
+      const n = (notes.filters[i].note - notes.lowestNote) / (notes.highestNote - notes.lowestNote);
       const x = i * w;
       const y = ctx.canvas.height - v * ctx.canvas.height;
       ctx.shadowBlur = w * v;
@@ -289,9 +299,11 @@ function visualize(ctx, notes, lowestNote, highestNote) {
   }
 }
 
-// Perform video motion detection by calculating the pixel difference between previous and current frame and looking for changed pixels over a grid.
+// Perform video motion detection by calculating the pixel difference between
+// previous and current frame and counting changed pixels over a grid.
 function detectMotion(previousFrame, currentFrame, threshold, rows, columns, onMotionDetectedCallback) {
 
+  // Initialize grid with motion detection state.
   const activePixels = new Array(currentFrame.height);
   for (var y = 0; y < currentFrame.height; ++y) {
     activePixels[y] = new Array(currentFrame.width);
@@ -334,7 +346,7 @@ function detectMotion(previousFrame, currentFrame, threshold, rows, columns, onM
         }
       }
 
-      // If enough active pixels trigger motion detected event for area.
+      // If enough active pixels: trigger motion detected event for column at row.
       if (c > changedPixelsNeeded) {
         const e = { x: i, y: j };
         onMotionDetectedCallback(e);

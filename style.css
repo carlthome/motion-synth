@@ -1,5 +1,11 @@
 body {
     background: black;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
 }
 canvas, video { 
     position: fixed;
@@ -8,12 +14,19 @@ canvas, video {
     width: 100vw;
     height: 100vh;
 }
+canvas {
+    opacity: 0.5;
+    z-index: 2;
+}
 video {
     object-fit: fill;
     pointer-events: none;
     filter: blur(25px);
     -webkit-filter: blur(25px);
     transform: scaleX(-1);
-    opacity: 0.25;
-    z-index: 1;
+}
+h1 {
+    color: white;
+    font-family: sans-serif;
+    cursor: pointer;
 }
